@@ -16,7 +16,6 @@ model User {
 }
 
 model Authenticator {
-  // credentialID as the primary identifier
   id                   String   @id
   userId               String
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
