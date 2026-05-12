@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { generateRegistrationOptions } from '@simplewebauthn/server';
-import { prisma } from '@/lib/prisma';
+import { getDatabase } from '@/lib/mongodb';
 import { RP_ID, RP_NAME } from '@/lib/webauthn';
 
 export async function POST(req: Request) {
@@ -11,16 +11,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
     }
 
-    let user = await prisma.user.findUnique({ where: { username } });
+    const db = await getDatabase();
+    const users = db.collection('users');
+
+    let user = await users.findOne({ username });
     
     if (!user) {
-      user = await prisma.user.create({ data: { username } });
+      const result = await users.insertOne({ 
+        username, 
+        createdAt: new Date(),
+        currentChallenge: null 
+      });
+      user = { _id: result.insertedId, username };
     }
 
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID: RP_ID,
-      userID: Buffer.from(user.id),
+      userID: Buffer.from(user._id.toString()),
       userName: user.username,
       attestationType: 'none',
       authenticatorSelection: {
@@ -30,10 +38,10 @@ export async function POST(req: Request) {
     });
 
     // Store challenge in database
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { currentChallenge: options.challenge },
-    });
+    await users.updateOne(
+      { _id: user._id },
+      { $set: { currentChallenge: options.challenge } }
+    );
 
     return NextResponse.json(options);
   } catch (error: any) {

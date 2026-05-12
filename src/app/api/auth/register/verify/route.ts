@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
-import { prisma } from '@/lib/prisma';
+import { getDatabase } from '@/lib/mongodb';
 import { RP_ID, EXPECTED_ORIGIN } from '@/lib/webauthn';
 import { createSession } from '@/lib/session';
 
 export async function POST(req: Request) {
   try {
     const { username, data } = await req.json();
+    const db = await getDatabase();
+    const users = db.collection('users');
+    const authenticators = db.collection('authenticators');
     
-    const user = await prisma.user.findUnique({ 
-      where: { username },
-      include: { authenticators: true } 
-    });
+    const user = await users.findOne({ username });
 
     if (!user || !user.currentChallenge) {
       return NextResponse.json({ error: 'Registration session expired' }, { status: 400 });
@@ -27,14 +27,13 @@ export async function POST(req: Request) {
     if (verification.verified && verification.registrationInfo) {
       const { credential } = verification.registrationInfo;
 
-      await prisma.authenticator.create({
-        data: {
-          id: credential.id,
-          userId: user.id,
-          publicKey: Buffer.from(credential.publicKey),
-          counter: BigInt(credential.counter),
-          transports: credential.transports || [],
-        },
+      await authenticators.insertOne({
+        _id: credential.id as any, // We use credentialID as _id
+        userId: user._id,
+        publicKey: Buffer.from(credential.publicKey),
+        counter: credential.counter,
+        transports: credential.transports || [],
+        createdAt: new Date(),
       });
 
       await createSession(username);

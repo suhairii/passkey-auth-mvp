@@ -1,23 +1,27 @@
 import { NextResponse } from 'next/server';
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
-import { prisma } from '@/lib/prisma';
+import { getDatabase } from '@/lib/mongodb';
 import { RP_ID, EXPECTED_ORIGIN } from '@/lib/webauthn';
 import { createSession } from '@/lib/session';
 
 export async function POST(req: Request) {
   try {
     const { username, data } = await req.json();
+    const db = await getDatabase();
+    const users = db.collection('users');
+    const authenticators = db.collection('authenticators');
     
-    const user = await prisma.user.findUnique({
-      where: { username },
-      include: { authenticators: { where: { id: data.id } } }
-    });
+    const user = await users.findOne({ username });
 
-    if (!user || !user.currentChallenge || user.authenticators.length === 0) {
+    if (!user || !user.currentChallenge) {
       return NextResponse.json({ error: 'Authentication session expired' }, { status: 400 });
     }
 
-    const dbAuthenticator = user.authenticators[0];
+    const dbAuthenticator = await authenticators.findOne({ _id: data.id as any });
+
+    if (!dbAuthenticator) {
+      return NextResponse.json({ error: 'Authenticator not found' }, { status: 400 });
+    }
 
     const verification = await verifyAuthenticationResponse({
       response: data,
@@ -25,18 +29,18 @@ export async function POST(req: Request) {
       expectedOrigin: EXPECTED_ORIGIN,
       expectedRPID: RP_ID,
       credential: {
-        id: dbAuthenticator.id,
-        publicKey: new Uint8Array(dbAuthenticator.publicKey),
-        counter: Number(dbAuthenticator.counter),
-        transports: dbAuthenticator.transports as any,
+        id: dbAuthenticator._id as any,
+        publicKey: new Uint8Array(dbAuthenticator.publicKey.buffer),
+        counter: dbAuthenticator.counter,
+        transports: dbAuthenticator.transports,
       },
     });
 
     if (verification.verified) {
-      await prisma.authenticator.update({
-        where: { id: dbAuthenticator.id },
-        data: { counter: BigInt(verification.authenticationInfo.newCounter) }
-      });
+      await authenticators.updateOne(
+        { _id: dbAuthenticator._id },
+        { $set: { counter: verification.authenticationInfo.newCounter } }
+      );
 
       await createSession(username);
       return NextResponse.json({ success: true });
