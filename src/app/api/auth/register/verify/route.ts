@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
 import { verifyRegistrationResponse } from '@simplewebauthn/server';
-import { db } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { RP_ID, EXPECTED_ORIGIN } from '@/lib/webauthn';
+import { createSession } from '@/lib/session';
 
 export async function POST(req: Request) {
   try {
     const { username, data } = await req.json();
-    const user = db.getUser(username);
+    
+    const user = await prisma.user.findUnique({ 
+      where: { username },
+      include: { authenticators: true } 
+    });
 
     if (!user || !user.currentChallenge) {
       return NextResponse.json({ error: 'Registration session expired' }, { status: 400 });
@@ -22,8 +27,17 @@ export async function POST(req: Request) {
     if (verification.verified && verification.registrationInfo) {
       const { credential } = verification.registrationInfo;
 
-      db.addUserDevice(username, credential);
+      await prisma.authenticator.create({
+        data: {
+          id: credential.id,
+          userId: user.id,
+          publicKey: Buffer.from(credential.publicKey),
+          counter: BigInt(credential.counter),
+          transports: credential.transports || [],
+        },
+      });
 
+      await createSession(username);
       return NextResponse.json({ success: true });
     }
 

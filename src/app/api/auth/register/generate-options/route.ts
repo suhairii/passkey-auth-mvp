@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { generateRegistrationOptions } from '@simplewebauthn/server';
-import { db } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { RP_ID, RP_NAME } from '@/lib/webauthn';
 
 export async function POST(req: Request) {
@@ -11,7 +11,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
     }
 
-    const user = db.getUser(username);
+    let user = await prisma.user.findUnique({ where: { username } });
+    
+    if (!user) {
+      user = await prisma.user.create({ data: { username } });
+    }
 
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
@@ -25,8 +29,11 @@ export async function POST(req: Request) {
       },
     });
 
-    // Store challenge in mock DB
-    db.updateUserChallenge(username, options.challenge);
+    // Store challenge in database
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { currentChallenge: options.challenge },
+    });
 
     return NextResponse.json(options);
   } catch (error: any) {

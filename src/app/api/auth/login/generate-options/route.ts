@@ -1,28 +1,34 @@
 import { NextResponse } from 'next/server';
 import { generateAuthenticationOptions } from '@simplewebauthn/server';
-import { db } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { RP_ID } from '@/lib/webauthn';
 
 export async function POST(req: Request) {
   try {
     const { username } = await req.json();
-    const user = db.getUser(username);
+    const user = await prisma.user.findUnique({
+      where: { username },
+      include: { authenticators: true }
+    });
 
-    if (user.devices.length === 0) {
+    if (!user || user.authenticators.length === 0) {
       return NextResponse.json({ error: 'No passkeys found for this user' }, { status: 404 });
     }
 
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
-      allowCredentials: user.devices.map((dev) => ({
+      allowCredentials: user.authenticators.map((dev) => ({
         id: dev.id,
         type: 'public-key',
-        transports: dev.transports,
+        transports: dev.transports as any,
       })),
       userVerification: 'preferred',
     });
 
-    db.updateUserChallenge(username, options.challenge);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { currentChallenge: options.challenge },
+    });
 
     return NextResponse.json(options);
   } catch (error: any) {
