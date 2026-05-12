@@ -13,10 +13,7 @@ export async function POST(req: Request) {
     }
 
     // Find the device that matches the credentialID
-    const bodyCredIDBuffer = Buffer.from(data.id, 'base64url');
-    const dbDevice = user.devices.find((dev) => 
-        Buffer.from(dev.credentialID).toString('base64url') === data.id
-    );
+    const dbDevice = user.devices.find((dev) => dev.id === data.id);
 
     if (!dbDevice) {
       return NextResponse.json({ error: 'Authenticator not found' }, { status: 400 });
@@ -27,7 +24,7 @@ export async function POST(req: Request) {
       expectedChallenge: user.currentChallenge,
       expectedOrigin: EXPECTED_ORIGIN,
       expectedRPID: RP_ID,
-      authenticator: dbDevice,
+      credential: dbDevice,
     });
 
     if (verification.verified) {

@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
       allowCredentials: user.devices.map((dev) => ({
-        id: dev.credentialID,
+        id: dev.id,
         type: 'public-key',
         transports: dev.transports,
       })),

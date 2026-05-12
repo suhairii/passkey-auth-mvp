@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID: RP_ID,
-      userID: user.id,
+      userID: Buffer.from(user.id),
       userName: user.username,
       attestationType: 'none',
       authenticatorSelection: {

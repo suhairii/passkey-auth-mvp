@@ -20,14 +20,9 @@ export async function POST(req: Request) {
     });
 
     if (verification.verified && verification.registrationInfo) {
-      const { credentialPublicKey, credentialID, counter } = verification.registrationInfo;
+      const { credential } = verification.registrationInfo;
 
-      db.addUserDevice(username, {
-        credentialPublicKey,
-        credentialID,
-        counter,
-        transports: data.response.transports,
-      });
+      db.addUserDevice(username, credential);
 
       return NextResponse.json({ success: true });
     }
